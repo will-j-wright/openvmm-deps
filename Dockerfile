@@ -88,6 +88,9 @@ ADD --link https://github.com/gregkh/linux.git#83657f4189612e5cbcabc3058acd36c0b
 # linux v7.2-rc1 with the KVM CCA v15 patchset
 FROM scratch AS src-linux-cca-v15
 ADD --link https://gitlab.arm.com/linux-arm/linux-cca.git#4ddbc65b5b408c37605110166a8da19f4dd0e180 /
+# linux v6.18.53 (linux-6.18.y) -- SEV-SNP guest for MSHV tests
+FROM scratch AS src-linux-snp-guest
+ADD --link https://github.com/gregkh/linux.git#e8694cdbd7db99fa26f6e8c80a2a337e0de29a2f /
 # llvm-project (release/17.x) -- used by libunwind and sdk
 FROM scratch AS src-llvm
 ADD --link https://github.com/llvm/llvm-project.git#6009708b4367171ccdbf4b5905cb6a803753fe18 /
@@ -212,6 +215,12 @@ RUN --mount=type=bind,from=src-linux-cca-v15,source=/,target=/pkg/linux/src \
 FROM scratch AS result-linux-cca-v15
 COPY --from=build-linux-cca-v15 --link /sysroot/boot /
 
+FROM --platform=$BUILDPLATFORM package-builder AS build-linux-snp-guest
+RUN --mount=type=bind,from=src-linux-snp-guest,source=/,target=/pkg/linux/src,rw \
+    /pkg/Tools/build.sh sysroots/linux-snp-guest
+FROM scratch AS result-linux-snp-guest
+COPY --from=build-linux-snp-guest --link /sysroot/boot /
+
 FROM --platform=$BUILDPLATFORM package-builder AS result-libunwind
 RUN --mount=type=bind,from=src-llvm,source=/,target=/pkg/libunwind/src \
     /pkg/Tools/build.sh pkg/libunwind
@@ -309,6 +318,7 @@ COPY --from=result-virtio-villain --link / /virtio-villain/
 # x86_64-only artifacts are added here.
 FROM scratch AS output-x86_64
 COPY --from=output-base       --link / /
+COPY --from=result-linux-snp-guest --link / /linux-snp-guest/
 
 FROM scratch AS output-aarch64
 COPY --from=output-base       --link / /
@@ -338,6 +348,8 @@ RUN case "$VERSION" in \
     archive "openvmm-test-initrd.x86_64.$VERSION.tar.gz" /input/initrd && \
     archive "openvmm-test-linux-6.1.x86_64.$VERSION.tar.gz" /input/linux-6.1 && \
     archive "openvmm-test-linux-6.18.x86_64.$VERSION.tar.gz" /input/linux-6.18 && \
+    archive "openvmm-test-linux-snp-guest.x86_64.$VERSION.tar.gz" \
+        /input/linux-snp-guest && \
     archive "qemu-linux-static.x86_64.$VERSION.tar.gz" /input/qemu && \
     archive "openvmm-test-virtio-villain.x86_64.$VERSION.tar.gz" /input/virtio-villain
 FROM scratch AS packages-x86_64

@@ -5,10 +5,10 @@ test kernels. These kernels are used by the petri test framework with Linux
 direct boot (`Firmware::LinuxDirect`).
 
 The build is structured to support multiple kernel lines side-by-side.
-Today **6.1** (LTS), **6.18**, and **cca-v15** ship; additional lines can be
-added purely additively (see "Adding a new kernel version" below). The CCA line
-is Arm-only and
-ships for `aarch64` only. Each kernel
+Today **6.1** (LTS), **6.18**, **cca-v15**, and **snp-guest** ship;
+additional lines can be added purely additively (see "Adding a new kernel
+version" below). The CCA line is Arm-only and ships for `aarch64` only. The
+SNP guest line ships for `x86_64` only. Each kernel
 is published as its own GitHub release artifact
 (`openvmm-test-linux-<version>.<arch>.<release>.tar.gz`) containing the
 kernel images and final config. The initrd is shared across all kernels
@@ -31,6 +31,10 @@ pkg/linux/
     aarch64.config        # Kernel config for 6.18 / aarch64
   cca-v15/
     aarch64.config        # Unified CCA v15 test kernel / aarch64
+  snp-guest/
+    x86_64.config         # SEV-SNP guest kernel / x86_64
+    required.config       # Settings the SNP guest boot needs
+    patches/              # SNP guest patches applied to the source
 ```
 
 The version selection is driven by `$LINUX_VERSION`, which is exported by
@@ -59,6 +63,25 @@ The build fails if the resolved config does not contain each setting.
 The **cca-v15** line uses one exact `cca-host/v15` source commit and one union
 configuration. The same image supports QEMU and FVP L1 hosts, nested Realm
 guests, and the generic AArch64 TCG VFIO/P2P tests.
+
+The **snp-guest** line is the L2 guest kernel for OpenVMM tests on MSHV with
+SEV-SNP. It builds the stable `v6.18.53` tag. Its config seed is
+`Microsoft/configs/x86/uvm_defconfig` from the Azure Linux kata-uvm tag
+`rolling-lts/kata-uvm/6.18.52.mshv1` (commit `ce4c4c2d`) in
+[CBL-Mariner-Linux-Kernel](https://github.com/microsoft/CBL-Mariner-Linux-Kernel),
+resolved by this build. The patches come from the
+[`snp-6.18-guest`](https://github.com/chris-oo/CBL-Mariner-Linux-Kernel/tree/snp-6.18-guest)
+branch, rebased onto `v6.18.53`:
+
+| Patch | Upstream commit | Purpose |
+|---|---|---|
+| `0001` | `6576fcb2` | Keep the decompressor GHCB page shared and reserve it in E820. |
+| `0002` | `a8b36965` | Enable x2APIC early, before the boot CPU APIC ID is read. |
+| `0003` | `a155739c` | Allocate hypercall output pages for SNP AP startup. |
+
+The patch set uses a GHCB leak workaround; it does not issue GHCB unregister
+requests. Boot-critical settings in `required.config` must stay built in,
+because the artifact does not ship modules.
 
 ## Updating a kernel config
 

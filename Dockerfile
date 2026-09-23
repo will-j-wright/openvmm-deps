@@ -192,7 +192,8 @@ COPY --from=build-virtio-villain --link /out/tests.tsv /tests.tsv
 # is shared across all kernel versions. To add a new kernel line, add a
 # matching `src-linux-<ver>` source stage above and a `build-linux-<ver>` /
 # `result-linux-<ver>` pair here, then add a `COPY --from=result-linux-<ver>`
-# line in the appropriate output stage.
+# line in the appropriate output stage. Lines with patches in
+# pkg/linux/<ver>/patches must mount their source read-write.
 FROM --platform=$BUILDPLATFORM package-builder AS build-linux-6.1
 RUN --mount=type=bind,from=src-linux-6.1,source=/,target=/pkg/linux/src \
     /pkg/Tools/build.sh sysroots/linux-6.1
@@ -305,6 +306,10 @@ COPY --from=result-qemu       --link / /qemu/
 # initramfs and run under binfmt/qemu-user to dump tests.tsv.
 COPY --from=result-virtio-villain --link / /virtio-villain/
 
+# x86_64-only artifacts are added here.
+FROM scratch AS output-x86_64
+COPY --from=output-base       --link / /
+
 FROM scratch AS output-aarch64
 COPY --from=output-base       --link / /
 COPY --from=result-linux-cca-v15 --link / /linux-cca-v15/
@@ -316,7 +321,7 @@ COPY --from=result-tfa-cca --link / /tfa-cca/
 # builds use the same immutable inputs.
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS package-x86_64
 ARG VERSION
-COPY --from=output-base --link / /input/
+COPY --from=output-x86_64 --link / /input/
 RUN case "$VERSION" in \
         ""|*[!A-Za-z0-9._-]*) echo "invalid VERSION: $VERSION" >&2; exit 1 ;; \
     esac && \

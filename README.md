@@ -13,7 +13,7 @@ apt install qemu-user-static
 Then build the Dockerfile to produce the results for the desired architecture:
 
 ```bash
-docker build --platform x86_64 --output type=local,dest=out .
+docker build --platform x86_64 --target output-x86_64 --output type=local,dest=out .
 docker build --platform aarch64 --target output-aarch64 --output type=local,dest=out .
 ```
 
@@ -59,7 +59,9 @@ docker buildx build \
   .
 ```
 
-The default final stage remains the unpacked `output` layout. Select a
+The default final stage remains the unpacked `output` layout, which contains
+only artifacts built for both architectures. Use `output-x86_64` or
+`output-aarch64` to include architecture-specific artifacts. Select a
 `packages-x86_64` or `packages-aarch64` target only when release-shaped
 archives are required.
 

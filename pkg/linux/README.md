@@ -20,6 +20,7 @@ artifact (so it isn't redundantly bundled into every kernel tarball).
 ```
 pkg/linux/
   build.sh                # Shared build script. Reads $LINUX_VERSION.
+  patch.sh                # Applies <version>/patches/*.patch, if present.
   sync-configs-from-ci.sh # Pull resolved configs from CI artifacts.
   README.md               # This file.
   6.1/
@@ -38,6 +39,22 @@ the form `LINUX_VERSION=<version>`, picked up by `pkg/Tools/build.sh`'s env
 handling). The Dockerfile pins one source-tree commit per kernel line
 (`src-linux-6.1`, etc.) and bind-mounts the matching source into the
 corresponding `build-linux-<version>` stage.
+
+A kernel line can also set these options in its deps file:
+
+- `LINUX_SOURCE_REVISION` and `LINUX_SOURCE_EPOCH` make the build
+  reproducible and write `manifest.txt` with the kernel release and hashes.
+- `LINUX_MODULES=1` builds the modules and installs them, stripped and
+  signed, under `lib/modules/<release>/` in the artifact. The build requires
+  `CONFIG_MODULES=y`. The module signing key is generated per build and is
+  not exported.
+
+A line can carry patches in `pkg/linux/<version>/patches/`. `patch.sh`
+applies them in filename order with no fuzz. The line's Dockerfile source
+mount must be read-write (`rw`).
+
+A line can also list settings in `pkg/linux/<version>/required.config`.
+The build fails if the resolved config does not contain each setting.
 
 The **cca-v15** line uses one exact `cca-host/v15` source commit and one union
 configuration. The same image supports QEMU and FVP L1 hosts, nested Realm
@@ -125,16 +142,17 @@ If you prefer to build locally (e.g., for a quick iteration on one combo):
 2. In `Dockerfile`, add a new `src-linux-<ver>` stage pinning that commit,
    and a `build-linux-<ver>` / `result-linux-<ver>` pair modeled on the
    existing 6.1 ones. Add a corresponding `COPY --from=result-linux-<ver>`
-   line in the final `output` stage.
+   line to `output-base` (both architectures), `output-x86_64`, or
+   `output-aarch64`.
 3. Create `sysroots/linux-<ver>/deps` containing
    `LINUX_VERSION=<ver>` and `pkg/linux`.
 4. Seed `pkg/linux/<ver>/{x86_64,aarch64}.config` by copying from the
    nearest existing version, then follow the "Updating a kernel config"
    procedure above to bootstrap the canonical config from the in-build
    `olddefconfig` output.
-5. Add the new version to the `KERNELS` list in the `release` job in
-   `.github/workflows/build.yml` (the gh-release upload picks up tarballs
-   by glob, so no further workflow changes are required).
+5. Add an `archive` line for the new version to the matching
+   `package-x86_64` or `package-aarch64` stage in `Dockerfile`. The release
+   job uploads every generated tarball, so no workflow change is required.
 6. Run `python3 pkg/Tools/gen-cgmanifest.py` to refresh `cgmanifest.json`.
 
 ## Build

@@ -34,6 +34,12 @@ case $KARCH in
     *) >&2 echo "Unknown kernel architecture: $KARCH" && exit 1 ;;
 esac
 
+case "${LINUX_MODULES:-0}" in
+    0) ;;
+    1) KTARGETS="$KTARGETS modules" ;;
+    *) >&2 echo "LINUX_MODULES must be 0 or 1" && exit 1 ;;
+esac
+
 cp "$config" .config
 
 if [ -n "${LINUX_SOURCE_EPOCH:-}" ]; then
@@ -61,6 +67,9 @@ if [ -f "$required_config" ]; then
     done <"$required_config"
 fi
 
+kernel_release="$(make -s -f "$SRCDIR/Makefile" ARCH="$KARCH" \
+    CROSS_COMPILE="$ARCH-linux-musl-" kernelrelease)"
+
 for image in $KIMAGES; do
     cp "$image" "$SYSROOT/boot/"
 done
@@ -68,9 +77,25 @@ done
 # Export the final config (after olddefconfig) so it can be extracted and committed.
 cp .config "$SYSROOT/boot/config"
 
+# Install modules under lib/modules/<release> in the kernel artifact. The
+# module signing key is generated in this build directory and not exported.
+if [ "${LINUX_MODULES:-0}" = 1 ]; then
+    if ! grep -Fxq CONFIG_MODULES=y .config; then
+        >&2 echo "LINUX_MODULES=1 requires CONFIG_MODULES=y"
+        exit 1
+    fi
+    if ! command -v depmod >/dev/null; then
+        >&2 echo "LINUX_MODULES=1 requires depmod"
+        exit 1
+    fi
+    make -j`nproc` -f "$SRCDIR/Makefile" ARCH="$KARCH" CROSS_COMPILE="$ARCH-linux-musl-" \
+        INSTALL_MOD_PATH="$SYSROOT/boot" INSTALL_MOD_STRIP=1 modules_install
+    modules_dir="$SYSROOT/boot/lib/modules/$kernel_release"
+    # Drop links back into this build tree.
+    rm -f "$modules_dir/build" "$modules_dir/source"
+fi
+
 if [ -n "${LINUX_SOURCE_REVISION:-}" ]; then
-    kernel_release="$(make -s -f "$SRCDIR/Makefile" ARCH="$KARCH" \
-        CROSS_COMPILE="$ARCH-linux-musl-" kernelrelease)"
     {
         echo "revision=$LINUX_SOURCE_REVISION"
         echo "source_epoch=${LINUX_SOURCE_EPOCH:-}"
@@ -82,5 +107,9 @@ if [ -n "${LINUX_SOURCE_REVISION:-}" ]; then
             name="$(basename "$image")"
             echo "${name}_sha256=$(sha256sum "$SYSROOT/boot/$name" | awk '{print $1}')"
         done
+        if [ "${LINUX_MODULES:-0}" = 1 ]; then
+            echo "modules_count=$(find "$modules_dir" -type f -name '*.ko' | wc -l)"
+            echo "modules_sha256=$(cd "$SYSROOT/boot" && find lib -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | awk '{print $1}')"
+        fi
     } >"$SYSROOT/boot/manifest.txt"
 fi

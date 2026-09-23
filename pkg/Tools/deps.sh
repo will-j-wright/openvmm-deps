@@ -23,6 +23,7 @@ gawk
 gcc
 git
 glibc-devel
+kmod
 libarchive
 libtool
 make

@@ -5,10 +5,10 @@ test kernels. These kernels are used by the petri test framework with Linux
 direct boot (`Firmware::LinuxDirect`).
 
 The build is structured to support multiple kernel lines side-by-side.
-Today **6.1** (LTS), **6.18**, **cca-v15**, and **snp-guest** ship;
-additional lines can be added purely additively (see "Adding a new kernel
-version" below). The CCA line is Arm-only and ships for `aarch64` only. The
-SNP guest line ships for `x86_64` only. Each kernel
+Today **6.1** (LTS), **6.18**, **cca-v15**, **snp-guest**, and **mshv-host**
+ship; additional lines can be added purely additively (see "Adding a new
+kernel version" below). The CCA line is Arm-only and ships for `aarch64`
+only. The MSHV host and SNP guest lines ship for `x86_64` only. Each kernel
 is published as its own GitHub release artifact
 (`openvmm-test-linux-<version>.<arch>.<release>.tar.gz`) containing the
 kernel images and final config. The initrd is shared across all kernels
@@ -35,6 +35,9 @@ pkg/linux/
     x86_64.config         # SEV-SNP guest kernel / x86_64
     required.config       # Settings the SNP guest boot needs
     patches/              # SNP guest patches applied to the source
+  mshv-host/
+    x86_64.config         # MSHV root-partition host kernel / x86_64
+    required.config       # Settings the Azure MSHV host needs
 ```
 
 The version selection is driven by `$LINUX_VERSION`, which is exported by
@@ -82,6 +85,22 @@ branch, rebased onto `v6.18.53`:
 The patch set uses a GHCB leak workaround; it does not issue GHCB unregister
 requests. Boot-critical settings in `required.config` must stay built in,
 because the artifact does not ship modules.
+
+The **mshv-host** line is the L1 kernel for Azure Linux Dom0 test runners.
+It builds commit `f10394f7` from the `user/cho/mshv-snp-normal-injection`
+branch of CBL-Mariner-Linux-Kernel: `rolling-lts/mshv/6.18.34.mshv3` plus the
+SNP interrupt injection policy UAPI that OpenVMM uses. Its config is that
+commit's `Microsoft/configs/x86/mshv_defconfig`, resolved by this build.
+
+The line sets `LINUX_MODULES=1`, so the artifact includes signed modules
+under `lib/modules/<release>/`. Install the kernel and modules on the runner,
+then generate its initramfs there. Each build generates a new module signing
+key and embeds its certificate in the kernel, so the images and modules are
+not byte-for-byte reproducible.
+
+The package builder has no `pahole`, so the resolved config drops BTF
+(`DEBUG_INFO_BTF`) and the options that depend on it. The MSHV tests do not
+need BTF.
 
 ## Updating a kernel config
 

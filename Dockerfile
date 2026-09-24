@@ -91,6 +91,10 @@ ADD --link https://gitlab.arm.com/linux-arm/linux-cca.git#4ddbc65b5b408c37605110
 # linux v6.18.53 (linux-6.18.y) -- SEV-SNP guest for MSHV tests
 FROM scratch AS src-linux-snp-guest
 ADD --link https://github.com/gregkh/linux.git#e8694cdbd7db99fa26f6e8c80a2a337e0de29a2f /
+# Azure Linux MSHV kernel (rolling-lts/mshv/6.18.34.mshv3) with the SNP
+# interrupt injection policy UAPI (user/cho/mshv-snp-normal-injection)
+FROM scratch AS src-linux-mshv-host
+ADD --link https://github.com/microsoft/CBL-Mariner-Linux-Kernel.git#f10394f7b07d5a1ee469fc3b85249d3bcdeee193 /
 # llvm-project (release/17.x) -- used by libunwind and sdk
 FROM scratch AS src-llvm
 ADD --link https://github.com/llvm/llvm-project.git#6009708b4367171ccdbf4b5905cb6a803753fe18 /
@@ -221,6 +225,12 @@ RUN --mount=type=bind,from=src-linux-snp-guest,source=/,target=/pkg/linux/src,rw
 FROM scratch AS result-linux-snp-guest
 COPY --from=build-linux-snp-guest --link /sysroot/boot /
 
+FROM --platform=$BUILDPLATFORM package-builder AS build-linux-mshv-host
+RUN --mount=type=bind,from=src-linux-mshv-host,source=/,target=/pkg/linux/src \
+    /pkg/Tools/build.sh sysroots/linux-mshv-host
+FROM scratch AS result-linux-mshv-host
+COPY --from=build-linux-mshv-host --link /sysroot/boot /
+
 FROM --platform=$BUILDPLATFORM package-builder AS result-libunwind
 RUN --mount=type=bind,from=src-llvm,source=/,target=/pkg/libunwind/src \
     /pkg/Tools/build.sh pkg/libunwind
@@ -319,6 +329,7 @@ COPY --from=result-virtio-villain --link / /virtio-villain/
 FROM scratch AS output-x86_64
 COPY --from=output-base       --link / /
 COPY --from=result-linux-snp-guest --link / /linux-snp-guest/
+COPY --from=result-linux-mshv-host --link / /linux-mshv-host/
 
 FROM scratch AS output-aarch64
 COPY --from=output-base       --link / /
@@ -350,6 +361,8 @@ RUN case "$VERSION" in \
     archive "openvmm-test-linux-6.18.x86_64.$VERSION.tar.gz" /input/linux-6.18 && \
     archive "openvmm-test-linux-snp-guest.x86_64.$VERSION.tar.gz" \
         /input/linux-snp-guest && \
+    archive "openvmm-test-linux-mshv-host.x86_64.$VERSION.tar.gz" \
+        /input/linux-mshv-host && \
     archive "qemu-linux-static.x86_64.$VERSION.tar.gz" /input/qemu && \
     archive "openvmm-test-virtio-villain.x86_64.$VERSION.tar.gz" /input/virtio-villain
 FROM scratch AS packages-x86_64

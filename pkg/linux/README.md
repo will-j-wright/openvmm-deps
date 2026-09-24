@@ -73,17 +73,19 @@ SEV-SNP. It builds the stable `v6.18.53` tag. Its config seed is
 `rolling-lts/kata-uvm/6.18.52.mshv1` (commit `ce4c4c2d`) in
 [CBL-Mariner-Linux-Kernel](https://github.com/microsoft/CBL-Mariner-Linux-Kernel),
 resolved by this build. The patches come from the
-[`snp-6.18-guest`](https://github.com/chris-oo/CBL-Mariner-Linux-Kernel/tree/snp-6.18-guest)
+[`snp-6.18-guest-unregister`](https://github.com/chris-oo/CBL-Mariner-Linux-Kernel/tree/snp-6.18-guest-unregister)
 branch, rebased onto `v6.18.53`:
 
 | Patch | Upstream commit | Purpose |
 |---|---|---|
-| `0001` | `6576fcb2` | Keep the decompressor GHCB page shared and reserve it in E820. |
+| `0001` | `8e6fbce7` | Unregister the decompressor GHCB before making its page private. |
 | `0002` | `a8b36965` | Enable x2APIC early, before the boot CPU APIC ID is read. |
-| `0003` | `a155739c` | Allocate hypercall output pages for SNP AP startup. |
+| `0003` | `6e82e92b` | Allocate hypercall output pages for SNP AP startup. |
 
-The patch set uses a GHCB leak workaround; it does not issue GHCB unregister
-requests. Boot-critical settings in `required.config` must stay built in,
+Patch `0001` uses the GHCB 2.04 Unregister GHCB GPA protocol when the
+hypervisor advertises it (feature bit 8). OpenVMM's MSHV backend supports it.
+On a hypervisor without it, the guest falls back to the upstream cleanup
+path. Boot-critical settings in `required.config` must stay built in,
 because the artifact does not ship modules.
 
 The **mshv-host** line is the L1 kernel for Azure Linux Dom0 test runners.

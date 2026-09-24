@@ -11,9 +11,6 @@ partitions. This prevents a NULL per-CPU pointer dereference before the
 lookup hypercall runs.
 
 Validated boot, pinned execution, and timer wakeups with 2, 4, and 8 VPs.
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
-Copilot-Session: 309b650d-fb0e-44da-8054-30ece8ab7e01
 ---
  drivers/hv/hv_common.c | 6 ++++--
  1 file changed, 4 insertions(+), 2 deletions(-)

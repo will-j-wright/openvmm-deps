@@ -82,17 +82,13 @@ branch, rebased onto `v6.18.53`:
 | `0002` | `a8b36965` | Enable x2APIC early, before the boot CPU APIC ID is read. |
 | `0003` | `6e82e92b` | Allocate hypercall output pages for SNP AP startup. |
 
-Patch `0001` uses the GHCB 2.04 Unregister GHCB GPA protocol when the
-hypervisor advertises it (feature bit 8). OpenVMM's MSHV backend supports it.
-On a hypervisor without it, the guest falls back to the upstream cleanup
-path. Boot-critical settings in `required.config` must stay built in,
-because the artifact does not ship modules.
+Boot-critical settings in `required.config` must stay built in, because the
+artifact does not ship modules.
 
-The **mshv-host** line is the L1 kernel for Azure Linux Dom0 test runners.
-It builds commit `f10394f7` from the `user/cho/mshv-snp-normal-injection`
-branch of CBL-Mariner-Linux-Kernel: `rolling-lts/mshv/6.18.34.mshv3` plus the
-SNP interrupt injection policy UAPI that OpenVMM uses. Its config is that
-commit's `Microsoft/configs/x86/mshv_defconfig`, resolved by this build.
+The **mshv-host** line is the L1 kernel for Azure Linux Dom0 test runners,
+built from commit
+[`f10394f7`](https://github.com/microsoft/CBL-Mariner-Linux-Kernel/commit/f10394f7b07d5a1ee469fc3b85249d3bcdeee193)
+with its `Microsoft/configs/x86/mshv_defconfig`.
 
 The line sets `LINUX_MODULES=1`, so the artifact includes signed modules
 under `lib/modules/<release>/`. Install the kernel and modules on the runner,

@@ -5,10 +5,10 @@ test kernels. These kernels are used by the petri test framework with Linux
 direct boot (`Firmware::LinuxDirect`).
 
 The build is structured to support multiple kernel lines side-by-side.
-Today **6.1** (LTS), **6.18**, and **cca-v15** ship; additional lines can be
-added purely additively (see "Adding a new kernel version" below). The CCA line
-is Arm-only and
-ships for `aarch64` only. Each kernel
+Today **6.1** (LTS), **6.18**, **cca-v15**, **snp-guest**, and **mshv-host**
+ship; additional lines can be added purely additively (see "Adding a new
+kernel version" below). The CCA line is Arm-only and ships for `aarch64`
+only. The MSHV host and SNP guest lines ship for `x86_64` only. Each kernel
 is published as its own GitHub release artifact
 (`openvmm-test-linux-<version>.<arch>.<release>.tar.gz`) containing the
 kernel images and final config. The initrd is shared across all kernels
@@ -20,6 +20,7 @@ artifact (so it isn't redundantly bundled into every kernel tarball).
 ```
 pkg/linux/
   build.sh                # Shared build script. Reads $LINUX_VERSION.
+  patch.sh                # Applies <version>/patches/*.patch, if present.
   sync-configs-from-ci.sh # Pull resolved configs from CI artifacts.
   README.md               # This file.
   6.1/
@@ -30,6 +31,13 @@ pkg/linux/
     aarch64.config        # Kernel config for 6.18 / aarch64
   cca-v15/
     aarch64.config        # Unified CCA v15 test kernel / aarch64
+  snp-guest/
+    x86_64.config         # SEV-SNP guest kernel / x86_64
+    required.config       # Settings the SNP guest boot needs
+    patches/              # SNP guest patches applied to the source
+  mshv-host/
+    x86_64.config         # MSHV root-partition host kernel / x86_64
+    required.config       # Settings the Azure MSHV host needs
 ```
 
 The version selection is driven by `$LINUX_VERSION`, which is exported by
@@ -39,9 +47,58 @@ handling). The Dockerfile pins one source-tree commit per kernel line
 (`src-linux-6.1`, etc.) and bind-mounts the matching source into the
 corresponding `build-linux-<version>` stage.
 
+A kernel line can also set these options in its deps file:
+
+- `LINUX_SOURCE_REVISION` and `LINUX_SOURCE_EPOCH` make the build
+  reproducible and write `manifest.txt` with the kernel release and hashes.
+- `LINUX_MODULES=1` builds the modules and installs them, stripped and
+  signed, under `lib/modules/<release>/` in the artifact. The build requires
+  `CONFIG_MODULES=y`. The module signing key is generated per build and is
+  not exported.
+
+A line can carry patches in `pkg/linux/<version>/patches/`. `patch.sh`
+applies them in filename order with no fuzz. The line's Dockerfile source
+mount must be read-write (`rw`).
+
+A line can also list settings in `pkg/linux/<version>/required.config`.
+The build fails if the resolved config does not contain each setting.
+
 The **cca-v15** line uses one exact `cca-host/v15` source commit and one union
 configuration. The same image supports QEMU and FVP L1 hosts, nested Realm
 guests, and the generic AArch64 TCG VFIO/P2P tests.
+
+The **snp-guest** line is the L2 guest kernel for OpenVMM tests on MSHV with
+SEV-SNP. It builds the stable `v6.18.53` tag. Its config seed is
+`Microsoft/configs/x86/uvm_defconfig` from the Azure Linux kata-uvm tag
+`rolling-lts/kata-uvm/6.18.52.mshv1` (commit `ce4c4c2d`) in
+[CBL-Mariner-Linux-Kernel](https://github.com/microsoft/CBL-Mariner-Linux-Kernel),
+resolved by this build. The patches come from the
+[`snp-6.18-guest-unregister`](https://github.com/chris-oo/CBL-Mariner-Linux-Kernel/tree/snp-6.18-guest-unregister)
+branch, rebased onto `v6.18.53`:
+
+| Patch | Upstream commit | Purpose |
+|---|---|---|
+| `0001` | `8e6fbce7` | Unregister the decompressor GHCB before making its page private. |
+| `0002` | `a8b36965` | Enable x2APIC early, before the boot CPU APIC ID is read. |
+| `0003` | `6e82e92b` | Allocate hypercall output pages for SNP AP startup. |
+
+Boot-critical settings in `required.config` must stay built in, because the
+artifact does not ship modules.
+
+The **mshv-host** line is the L1 kernel for Azure Linux Dom0 test runners,
+built from commit
+[`f10394f7`](https://github.com/microsoft/CBL-Mariner-Linux-Kernel/commit/f10394f7b07d5a1ee469fc3b85249d3bcdeee193)
+with its `Microsoft/configs/x86/mshv_defconfig`.
+
+The line sets `LINUX_MODULES=1`, so the artifact includes signed modules
+under `lib/modules/<release>/`. Install the kernel and modules on the runner,
+then generate its initramfs there. Each build generates a new module signing
+key and embeds its certificate in the kernel, so the images and modules are
+not byte-for-byte reproducible.
+
+The package builder has no `pahole`, so the resolved config drops BTF
+(`DEBUG_INFO_BTF`) and the options that depend on it. The MSHV tests do not
+need BTF.
 
 ## Updating a kernel config
 
@@ -125,16 +182,17 @@ If you prefer to build locally (e.g., for a quick iteration on one combo):
 2. In `Dockerfile`, add a new `src-linux-<ver>` stage pinning that commit,
    and a `build-linux-<ver>` / `result-linux-<ver>` pair modeled on the
    existing 6.1 ones. Add a corresponding `COPY --from=result-linux-<ver>`
-   line in the final `output` stage.
+   line to `output-base` (both architectures), `output-x86_64`, or
+   `output-aarch64`.
 3. Create `sysroots/linux-<ver>/deps` containing
    `LINUX_VERSION=<ver>` and `pkg/linux`.
 4. Seed `pkg/linux/<ver>/{x86_64,aarch64}.config` by copying from the
    nearest existing version, then follow the "Updating a kernel config"
    procedure above to bootstrap the canonical config from the in-build
    `olddefconfig` output.
-5. Add the new version to the `KERNELS` list in the `release` job in
-   `.github/workflows/build.yml` (the gh-release upload picks up tarballs
-   by glob, so no further workflow changes are required).
+5. Add an `archive` line for the new version to the matching
+   `package-x86_64` or `package-aarch64` stage in `Dockerfile`. The release
+   job uploads every generated tarball, so no workflow change is required.
 6. Run `python3 pkg/Tools/gen-cgmanifest.py` to refresh `cgmanifest.json`.
 
 ## Build

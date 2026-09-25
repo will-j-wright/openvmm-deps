@@ -1,0 +1,7 @@
+# The x86_64 MSHV root-partition host kernel for OpenVMM MSHV tests
+
+LINUX_VERSION=mshv-host
+LINUX_SOURCE_REVISION=f10394f7b07d5a1ee469fc3b85249d3bcdeee193
+LINUX_SOURCE_EPOCH=1790013136
+LINUX_MODULES=1
+pkg/linux
